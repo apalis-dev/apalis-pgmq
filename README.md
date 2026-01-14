@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/apalis-pgmq/badge.svg)](https://docs.rs/apalis-pgmq)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-PGMQ backend for [Apalis](https://github.com/apalis-dev/apalis), providing a PostgreSQL-based message queue for distributed job processing.
+PGMQ backend for [Apalis](https://github.com/apalis-dev/apalis), providing a PostgreSQL-based message queue for distributed message processing.
 
 ## Overview
 
@@ -17,8 +17,8 @@ This crate provides a message queue backend for Apalis using [PGMQ](https://gith
 - **Guaranteed delivery** – Messages are delivered to exactly one consumer within the visibility timeout
 - **Distributed processing** – Multiple workers can process messages concurrently
 - **Auto-retry** – Failed messages automatically become visible again after timeout
-- **Archive support** – Messages can be archived for long-term retention instead of deletion
 - **Configurable polling** – Adjust poll intervals and visibility timeouts per queue
+- **Codec-based serialization** – Uses apalis-codec for flexible message encoding
 
 ## Installation
 
@@ -26,7 +26,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-apalis-core = "1.0.0-beta.2"
+apalis = "1.0.0-rc.2"
 apalis-pgmq = "0.1"
 serde = { version = "1", features = ["derive"] }
 ```
@@ -49,139 +49,172 @@ docker exec -it postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS pgm
 
 ## Usage
 
-### Creating a Backend
+### Basic Example
 
 ```rust
-use apalis_pgmq::PgMq;
+use apalis::prelude::*;
+use apalis_pgmq::{PgMqBackend, Config};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Job {
-    id: u64,
-    data: String,
+struct EmailMessage {
+    to: String,
+    subject: String,
+    body: String,
 }
 
-// Create a PGMQ backend
-let backend = PgMq::<Job>::new(
+async fn send_email(message: EmailMessage) -> Result<(), std::io::Error> {
+    // Process the message
+    println!("Sending email to: {}", message.to);
+    Ok(())
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a PGMQ backend
+    let backend = PgMqBackend::<EmailMessage>::new(
+        "postgres://postgres:postgres@localhost:5432/postgres",
+        "emails"
+    ).await?;
+
+    // Build and run worker
+    Monitor::new()
+        .register(
+            WorkerBuilder::new("email-worker")
+                .backend(backend)
+                .build_fn(send_email)
+        )
+        .run()
+        .await?;
+
+    Ok(())
+}
+
+// Use your preferred async runtime (tokio, async-std, smol, etc.)
+fn main() {
+    // Example with tokio:
+    // tokio::runtime::Runtime::new().unwrap().block_on(run()).unwrap();
+    
+    // Example with async-std:
+    // async_std::task::block_on(run()).unwrap();
+}
+```
+
+### Custom Configuration
+
+```rust
+use apalis_pgmq::Config;
+use std::time::Duration;
+
+// Create custom configuration
+let config = Config::new("my-queue")
+    .with_visibility_timeout(Duration::from_secs(120))
+    .with_poll_interval(Duration::from_millis(500))
+    .with_max_retries(3);
+
+let backend = PgMqBackend::<EmailMessage>::new_with_config(
     "postgres://postgres:postgres@localhost:5432/postgres",
-    "jobs"
-)
-.await?
-.with_visibility_timeout(std::time::Duration::from_secs(60))
-.with_poll_interval(std::time::Duration::from_millis(500))
-.with_max_retries(5);
-```
-
-### Enqueuing Messages
-
-```rust
-// Enqueue a message
-let msg_id = backend.enqueue(Job {
-    id: 1,
-    data: "process this".to_string(),
-}).await?;
-
-println!("Enqueued message with ID: {}", msg_id);
-```
-
-### Using with Apalis
-
-Use the backend with Apalis `WorkerBuilder`:
-
-```rust
-use apalis_core::backend::Backend;
-
-// The backend implements the Backend trait
-// Use it with WorkerBuilder to create workers
-let worker = WorkerBuilder::new("my-worker")
-    .backend(backend)
-    .build(my_handler_function);
+    config
+).await?;
 ```
 
 ## Configuration
 
-### Visibility Timeout
-
-Set how long messages stay invisible after being read (default: 30 seconds):
+The `Config` struct provides configuration options for the PGMQ backend:
 
 ```rust
-let backend = PgMq::<Job>::new(url, "queue")
-    .await?
-    .with_visibility_timeout(std::time::Duration::from_secs(120)); // 2 minutes
+use apalis_pgmq::Config;
+use std::time::Duration;
+
+let config = Config::new("my-queue")
+    .with_visibility_timeout(Duration::from_secs(120))  // Default: 30s
+    .with_poll_interval(Duration::from_millis(500))     // Default: 100ms
+    .with_max_retries(3);                               // Default: 5
 ```
 
-### Poll Interval
+### Configuration Options
 
-Set how frequently to poll for new messages (default: 100ms):
-
-```rust
-let backend = PgMq::<Job>::new(url, "queue")
-    .await?
-    .with_poll_interval(std::time::Duration::from_millis(500)); // 500ms
-```
-
-### Max Retries
-
-Set maximum retry attempts before archiving (default: 5):
-
-```rust
-let backend = PgMq::<Job>::new(url, "queue")
-    .await?
-    .with_max_retries(3); // Archive after 3 failed attempts
-```
+- **`visibility_timeout`** - How long messages stay invisible after being read (default: 30 seconds)
+- **`poll_interval`** - How frequently to poll for new messages when queue is empty (default: 100ms)
+- **`max_retries`** - Maximum retry attempts before message handling fails (default: 5)
 
 ## API Reference
 
-### PgMq Methods
-
-- `new(connection_url, queue_name)` - Create a new PGMQ backend
-- `with_visibility_timeout(duration)` - Set visibility timeout
-- `with_poll_interval(duration)` - Set poll interval
-- `with_max_retries(count)` - Set max retry attempts
-- `enqueue(job)` - Enqueue a message, returns message ID
-- `ack(msg_id)` - Acknowledge (delete) a message
-- `archive(msg_id)` - Archive a message
-- `retry(msg_id, read_count)` - Retry logic (archives if max retries exceeded)
-
-### PgMqContext
-
-The context provides message metadata:
+### PgMqBackend
 
 ```rust
-pub struct PgMqContext {
-    pub msg_id: Option<i64>,
-    pub read_ct: Option<i32>,
-    pub enqueued_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub vt: Option<chrono::DateTime<chrono::Utc>>,
+impl<T> PgMqBackend<T>
+where
+    T: Serialize + for<'de> Deserialize<'de>,
+{
+    pub async fn new(connection_url: &str, queue_name: &str) -> Result<Self, PgMqError>
+    pub async fn new_with_config(connection_url: &str, config: Config) -> Result<Self, PgMqError>
+    pub fn queue(&self) -> &PGMQueue
+    pub fn config(&self) -> &Config
 }
 ```
 
-## Message Acknowledgment
+### Config
 
-Messages are automatically acknowledged by Apalis when your job handler completes successfully. If the handler returns an error or panics, the message will become visible again after the visibility timeout expires.
+```rust
+impl Config {
+    pub fn new(namespace: impl Into<String>) -> Self
+    pub fn with_visibility_timeout(self, timeout: Duration) -> Self
+    pub fn with_poll_interval(self, interval: Duration) -> Self
+    pub fn with_max_retries(self, max_retries: i32) -> Self
+    pub fn namespace(&self) -> &str
+    pub fn visibility_timeout(&self) -> Duration
+    pub fn poll_interval(&self) -> Duration
+    pub fn max_retries(&self) -> i32
+}
+```
 
-## Key Differences from Storage Backends
+### Backend Trait
 
-Unlike storage backends (like `apalis-sql`), message queues:
+`PgMqBackend<T>` implements the `Backend` trait from `apalis-core`:
 
-1. **Are immutable** – Messages cannot be updated after being enqueued
-2. **Have visibility timeouts** – Messages become temporarily invisible when read
-3. **Auto-requeue on failure** – Unacknowledged messages automatically return to the queue
-4. **No job state tracking** – Messages are either in the queue or processed (no "running" state)
-5. **Simpler semantics** – Focus on message delivery rather than job lifecycle management
+- **`type Args = T`** - Your message type
+- **`type IdType = i64`** - PGMQ message IDs
+- **`type Context = ()`** - No additional context
+- **`type Error = PgMqError`** - Error type
 
-## Comparison with apalis-sql
+## Message Processing
+
+Messages are processed by Apalis workers. When a worker successfully processes a message, PGMQ automatically removes it from the queue. If processing fails or the worker crashes, the message becomes visible again after the visibility timeout expires and can be retried.
+
+### Serialization
+
+This backend uses `JsonCodec` from `apalis-codec` for message serialization. Your message types must implement `Serialize` and `Deserialize` from serde:
+
+```rust
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MyMessage {
+    // your fields
+}
+```
+
+## Key Characteristics
+
+This is a **message queue** backend, not a storage backend:
+
+1. **Immutable messages** – Messages cannot be updated after being enqueued
+2. **Visibility timeouts** – Messages become temporarily invisible when read
+3. **Auto-requeue** – Unacknowledged messages automatically return to the queue
+4. **No state tracking** – Messages are either in the queue or processed
+5. **Simple semantics** – Focus on message delivery, not job lifecycle
+
+## Comparison with Storage Backends
 
 | Feature | apalis-pgmq | apalis-sql |
 |---------|-------------|------------|
+| Type | Message Queue | Storage |
 | Backend | PGMQ | Direct SQL |
-| Message mutability | Immutable | Mutable |
+| Mutability | Immutable | Mutable |
 | Visibility timeout | Yes | No |
 | Auto-requeue | Yes | Manual |
-| Job state tracking | No | Yes (pending/running/done) |
-| Archive support | Yes | No |
-| Use case | Message queues | Job queues with state |
-| Complexity | Lower | Higher |
+| State tracking | No | Yes |
+| Use case | Message processing | Job management |
 
 ## Contributing
 
