@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 use crate::errors::PgMqError;
+use crate::sink::PgMqSink;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgMqContext {
@@ -20,11 +21,12 @@ pub struct PgMqContext {
 
 #[derive(Clone)]
 pub struct PgMq<T> {
-    queue: PGMQueue,
-    queue_name: String,
+    pub(crate) queue: PGMQueue,
+    pub(crate) queue_name: String,
     visibility_timeout: std::time::Duration,
     poll_interval: std::time::Duration,
-    max_retries: i32,
+    pub(crate) max_retries: i32,
+    sink: PgMqSink<T>,
     _phantom: PhantomData<T>,
 }
 
@@ -47,6 +49,7 @@ where
             visibility_timeout: std::time::Duration::from_secs(30),
             poll_interval: std::time::Duration::from_millis(100),
             max_retries: 5,
+            sink: PgMqSink::new(),
             _phantom: PhantomData,
         })
     }
@@ -95,6 +98,10 @@ where
             self.archive(msg_id).await?;
         }
         Ok(())
+    }
+
+    pub(crate) fn sink_mut(&mut self) -> &mut PgMqSink<T> {
+        &mut self.sink
     }
 }
 
