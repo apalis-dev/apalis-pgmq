@@ -7,6 +7,7 @@ repository = "https://github.com/apalis-dev/apalis-pgmq"
 license-file = "LICENSE"
 description = "Background task processing for rust using apalis and pgmq"
 readme = "README.md"
+license = "PostgreSQL"
 homepage = "https://github.com/apalis-dev/apalis-pgmq"
 documentation = "https://docs.rs/apalis-pgmq"
 keywords = ["apalis", "postgres", "messages", "queue", "worker"]
