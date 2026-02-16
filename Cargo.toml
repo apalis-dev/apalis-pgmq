@@ -25,7 +25,7 @@ tokio-comp-native-tls = ["tokio", "sqlx/runtime-tokio-native-tls"]
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.8.6", features = ["postgres", "chrono", "json"] }
-apalis-core = { version = "1.0.0-rc.3", default-features = false, features = [
+apalis-core = { version = "1.0.0-rc.4", default-features = false, features = [
     "sleep",
 ] }
 apalis-codec = { version = "0.1.0-rc.3", default-features = false, features = [
