@@ -44,7 +44,7 @@ tokio = { version = "1", features = [
 async-std = { version = "1.13.0", optional = true, default-features = false }
 
 [dev-dependencies]
-pgmq = "0.31.2"
+pgmq = "0.32.0"
 tokio = { version = "1", features = ["full"] }
 apalis = { version = "1.0.0-rc.4" }
 apalis-workflow = { version = "0.1.0-rc.4", features = ["rand"]}
