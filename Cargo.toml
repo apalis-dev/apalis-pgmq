@@ -5,6 +5,7 @@ authors = ["Njuguna Mureithi <mureithinjuguna@gmail.com>"]
 edition = "2024"
 repository = "https://github.com/apalis-dev/apalis-pgmq"
 license-file = "LICENSE"
+license = "PostgreSQL"
 description = "Background task processing for rust using apalis and pgmq"
 readme = "README.md"
 homepage = "https://github.com/apalis-dev/apalis-pgmq"

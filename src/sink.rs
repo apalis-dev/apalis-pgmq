@@ -1,5 +1,8 @@
 use std::{
-    collections::VecDeque, pin::Pin, sync::Arc, task::{Context, Poll}
+    collections::VecDeque,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
 };
 
 use apalis_core::backend::codec::Codec;
@@ -119,9 +122,13 @@ where
             let conn = this.conn.clone();
             let queue_name = queue_name.to_string();
 
-            let future = async move { send_batch(&conn, &queue_name, &messages).await.map_err(Arc::new) }
-                .boxed()
-                .shared();
+            let future = async move {
+                send_batch(&conn, &queue_name, &messages)
+                    .await
+                    .map_err(Arc::new)
+            }
+            .boxed()
+            .shared();
 
             this.pending_sends.push_back(PendingSend { future });
         }
