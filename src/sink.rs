@@ -1,12 +1,16 @@
 use std::{
     collections::VecDeque,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use apalis_core::backend::codec::Codec;
 use chrono::Utc;
-use futures::{FutureExt, Sink};
+use futures::{
+    FutureExt, Sink,
+    future::{BoxFuture, Shared},
+};
 use sqlx::{PgPool, Row, postgres::PgRow};
 
 use crate::{PGMQueue, PgMqTask, config::Config, errors::PgmqError, query::enqueue_batch};
@@ -46,8 +50,7 @@ impl<T, C> PgMqSink<T, C> {
 }
 
 struct PendingSend {
-    future:
-        Pin<Box<dyn std::future::Future<Output = Result<Vec<i64>, PgmqError>> + Send + 'static>>,
+    future: Shared<BoxFuture<'static, Result<Vec<i64>, Arc<PgmqError>>>>,
 }
 
 struct MessageWithDelay {
@@ -69,14 +72,14 @@ where
 
         // Poll pending sends
         while let Some(pending) = this.pending_sends.front_mut() {
-            match pending.future.as_mut().poll(cx) {
+            match pending.future.poll_unpin(cx) {
                 Poll::Ready(Ok(_msg_ids)) => {
                     this.pending_sends.pop_front();
                     println!("Completed pending send to PgMq");
                 }
                 Poll::Ready(Err(e)) => {
                     this.pending_sends.pop_front();
-                    return Poll::Ready(Err(e));
+                    return Poll::Ready(Err(Arc::into_inner(e).unwrap()));
                 }
                 Poll::Pending => {
                     return Poll::Pending;
@@ -119,21 +122,26 @@ where
             let conn = this.conn.clone();
             let queue_name = queue_name.to_string();
 
-            let future = async move { send_batch(&conn, &queue_name, &messages).await }.boxed();
+            let future = async move {
+                send_batch(&conn, &queue_name, &messages)
+                    .await
+                    .map_err(Arc::new)
+            }
+            .boxed()
+            .shared();
 
             this.pending_sends.push_back(PendingSend { future });
         }
 
         // Now poll all pending sends
         while let Some(pending) = this.pending_sends.front_mut() {
-            match pending.future.as_mut().poll(cx) {
-                Poll::Ready(Ok(msg_ids)) => {
+            match pending.future.poll_unpin(cx) {
+                Poll::Ready(Ok(_)) => {
                     this.pending_sends.pop_front();
-                    println!("Pushed {} jobs to PgMq", msg_ids.len());
                 }
                 Poll::Ready(Err(e)) => {
                     this.pending_sends.pop_front();
-                    return Poll::Ready(Err(e));
+                    return Poll::Ready(Err(Arc::into_inner(e).unwrap()));
                 }
                 Poll::Pending => {
                     return Poll::Pending;

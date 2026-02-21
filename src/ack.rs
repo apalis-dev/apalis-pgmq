@@ -29,7 +29,7 @@ where
             let conn = self.connection.clone();
 
             let fut = async move {
-                let query = query::archive_batch(&queue_name)?;
+                let query = query::archive_batch(queue_name.as_ref())?;
                 let row = sqlx::query(&query).bind([task_id]).execute(&conn).await?;
 
                 let num_archived = row.rows_affected();
