@@ -1,11 +1,13 @@
+#![doc = include_str!("../README.md")]
 use std::{marker::PhantomData, sync::Arc};
 
 use apalis_codec::json::JsonCodec;
 use apalis_core::{
     backend::{
-        Backend, TaskStream,
+        Backend, BackendExt, TaskStream,
         codec::Codec,
         poll_strategy::{PollContext, PollStrategyExt},
+        queue::Queue,
     },
     task::{Task, attempt::Attempt, task_id::TaskId},
     worker::{context::WorkerContext, ext::ack::AcknowledgeLayer},
@@ -17,7 +19,7 @@ use futures::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
-use sqlx::{PgPool, Postgres};
+pub use sqlx::{PgPool, Postgres};
 
 use crate::{
     config::Config, context::PgMqContext, errors::PgmqError, fetch::fetch_messages, sink::PgMqSink,
@@ -91,7 +93,7 @@ impl<Args: Serialize + DeserializeOwned> PGMQueue<Args> {
 
 impl<Args, C: Codec<Args, Compact = Vec<u8>>> PGMQueue<Args, C> {
     pub async fn new_with_config(pool: PgPool, config: Config<C>) -> Self {
-        PGMQueue::create(config.queue(), &pool)
+        PGMQueue::create(config.queue().as_ref(), &pool)
             .await
             .expect("Queue to be created");
         Self {
@@ -107,7 +109,7 @@ impl<Args, C: Codec<Args, Compact = Vec<u8>>> PGMQueue<Args, C> {
         connection: PgPool,
     ) -> Result<Option<Vec<Message>>, PgmqError> {
         let query = &query::read(
-            config.queue(),
+            config.queue().as_ref(),
             config.visibility_timeout().as_secs() as i32,
             config.buffer_size() as i32,
         )?;
@@ -154,6 +156,23 @@ where
     }
 
     fn poll(self, worker: &WorkerContext) -> Self::Stream {
+        self.poll_basic(worker)
+            .map(|a| match a {
+                Ok(Some(task)) => Ok(Some(
+                    task.try_map(|t| C::decode(&t))
+                        .map_err(|e| PgmqError::ParsingError(e.into()))?,
+                )),
+                Ok(None) => Ok(None),
+                Err(e) => Err(e),
+            })
+            .boxed()
+    }
+}
+
+impl<Args: Send + Sync + 'static, Decode: Codec<Args, Compact = Vec<u8>> + Send + 'static>
+    PGMQueue<Args, Decode>
+{
+    fn poll_basic(self, worker: &WorkerContext) -> TaskStream<PgMqTask<Vec<u8>>, PgmqError> {
         let ctx = PollContext::new(worker.clone(), Arc::default());
         let poller = self.config.poll_strategy().clone().build_stream(&ctx);
         stream::unfold(
@@ -179,8 +198,6 @@ where
         )
         .map(|res| match res {
             Ok(raw) => {
-                let args =
-                    C::decode(&raw.message).map_err(|e| PgmqError::ParsingError(e.into()))?;
                 let ctx = PgMqContext {
                     enqueued_at: raw.enqueued_at,
                     headers: raw
@@ -189,7 +206,7 @@ where
                         .cloned()
                         .ok_or(PgmqError::ParsingError("Headers are not an object".into()))?,
                 };
-                let task = Task::builder(args)
+                let task = Task::builder(raw.message)
                     .with_task_id(TaskId::new(raw.msg_id))
                     .with_attempt(Attempt::new_with_value(raw.read_count as usize))
                     .run_at_timestamp(raw.visibility_time.timestamp() as u64)
@@ -200,6 +217,26 @@ where
             Err(e) => Err(e),
         })
         .boxed()
+    }
+}
+
+impl<Args: Sync, Decode: Sync> BackendExt for PGMQueue<Args, Decode>
+where
+    Args: Send + 'static + Unpin,
+    Decode: Codec<Args, Compact = Vec<u8>> + Send + 'static,
+    Decode::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Compact = Vec<u8>;
+
+    type Codec = Decode;
+    type CompactStream = TaskStream<PgMqTask<Vec<u8>>, Self::Error>;
+
+    fn get_queue(&self) -> Queue {
+        self.config.queue().clone()
+    }
+
+    fn poll_compact(self, worker: &WorkerContext) -> Self::CompactStream {
+        self.poll_basic(worker).boxed()
     }
 }
 

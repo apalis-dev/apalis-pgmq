@@ -22,26 +22,29 @@ docker run -d --name pgmq-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 gh
 
 ### Basic Worker Example
 
-```rust,no_run
+```rust
+use std::{collections::HashMap, env};
+
 use apalis::prelude::*;
 use apalis_pgmq::*;
-use futures::stream::{self, StreamExt, SinkExt};
+use futures::{self, SinkExt};
 
 #[tokio::main]
 async fn main() {
-   let pool = PgPool::connect(env::var("DATABASE_URL").unwrap().as_str())
+    let pool = PgPool::connect(env::var("DATABASE_URL").unwrap().as_str())
         .await
         .unwrap();
 
     PGMQueue::setup(&pool).await.unwrap();
-    let mut backend = PGMQueue::new(pool, "default_queue").await;
+    let mut backend = PGMQueue::new(pool, "basic").await;
 
     backend.send(Task::new(HashMap::new())).await.unwrap();
 
     async fn send_reminder(
-        msg: HashMap<String, String>,
+        _msg: HashMap<String, String>,
         wrk: WorkerContext,
     ) -> Result<(), BoxDynError> {
+        wrk.stop()?;
         Ok(())
     }
 
@@ -50,6 +53,7 @@ async fn main() {
         .build(send_reminder);
     worker.run().await.unwrap();
 }
+
 ```
 
 ## Observability
@@ -63,7 +67,7 @@ Track your jobs using [apalis-board](https://github.com/apalis-dev/apalis-board)
 - [ ] Lazy Fetcher (using NOTIFY)
 - [ ] Shared Fetcher (Multiple queues on the same connection)
 - [x] Batch Sink
-- [ ] BackendExt
+- [x] BackendExt
 - [ ] Worker heartbeats
 - [ ] Workflow support
 - [ ] Extensive Docs

@@ -1,8 +1,9 @@
 use std::{marker::PhantomData, time::Duration};
 
 use apalis_codec::json::JsonCodec;
-use apalis_core::backend::poll_strategy::{
-    BackoffConfig, IntervalStrategy, MultiStrategy, StrategyBuilder,
+use apalis_core::backend::{
+    poll_strategy::{BackoffConfig, IntervalStrategy, MultiStrategy, StrategyBuilder},
+    queue::Queue,
 };
 
 /// Configuration for apalis-pgmq
@@ -10,7 +11,7 @@ use apalis_core::backend::poll_strategy::{
 pub struct Config<Codec = JsonCodec<Vec<u8>>> {
     poll_strategy: MultiStrategy,
     buffer_size: usize,
-    queue: String,
+    queue: Queue,
     visibility_timeout: Duration,
     _codec: PhantomData<Codec>,
 }
@@ -34,13 +35,13 @@ impl<Codec> Config<Codec> {
     }
 
     /// Gets the queue name
-    pub fn queue(&self) -> &str {
+    pub fn queue(&self) -> &Queue {
         &self.queue
     }
 
     /// Sets the queue name (builder style)
     pub fn with_queue(mut self, queue: String) -> Self {
-        self.queue = queue;
+        self.queue = Queue::from(queue);
         self
     }
 
@@ -86,7 +87,7 @@ impl<C> Default for Config<C> {
         Self {
             poll_strategy,
             buffer_size: 100,
-            queue: "default_queue".to_string(),
+            queue: "default_queue".into(),
             visibility_timeout: Duration::from_secs(30),
             _codec: PhantomData,
         }
