@@ -244,8 +244,8 @@ where
 mod tests {
     use std::{collections::HashMap, env, time::Duration};
 
+    use apalis::prelude::TaskSink;
     use apalis_core::{error::BoxDynError, worker::builder::WorkerBuilder};
-    use futures::SinkExt;
 
     use super::*;
 
@@ -258,7 +258,7 @@ mod tests {
         PGMQueue::setup(&pool).await.unwrap();
         let mut backend = PGMQueue::new(pool, "basic_test").await;
 
-        backend.send(Task::new(HashMap::new())).await.unwrap();
+        backend.push_task(Task::new(HashMap::new())).await.unwrap();
 
         async fn send_reminder(
             _: HashMap<String, String>,

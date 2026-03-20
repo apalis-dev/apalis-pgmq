@@ -11,10 +11,10 @@ async fn main() {
         .unwrap();
 
     PGMQueue::setup(&pool).await.unwrap();
-    let mut backend = PGMQueue::new(pool, "e_workflow").await;
+    let mut backend = PGMQueue::new(pool, "a_workflow").await;
 
     backend
-        .push(serde_json::to_vec(&42u32).unwrap())
+        .push_start(42)
         .await
         .unwrap();
 
@@ -33,7 +33,6 @@ async fn main() {
     }
     let workflow = Workflow::new("test_workflow")
         .and_then(task1)
-        .delay_for(Duration::from_secs(1))
         .and_then(task2)
         .and_then(task3);
 

@@ -19,9 +19,9 @@ pin_project_lite::pin_project! {
     pub(super) struct PgMqSink<T, C> {
         conn: PgPool,
         config: Config<C>,
-        items: VecDeque<PgMqTask<T>>,
+        items: VecDeque<PgMqTask<Vec<u8>>>,
         pending_sends: VecDeque<PendingSend>,
-        _codec: std::marker::PhantomData<C>,
+        _codec: std::marker::PhantomData<(T, C)>,
     }
 }
 
@@ -59,7 +59,7 @@ struct MessageWithDelay {
     headers: Option<serde_json::Value>,
 }
 
-impl<T, C> Sink<PgMqTask<T>> for PGMQueue<T, C>
+impl<T, C> Sink<PgMqTask<Vec<u8>>> for PGMQueue<T, C>
 where
     T: Send + 'static + Unpin,
     C: Codec<T, Compact = Vec<u8>> + Unpin,
@@ -90,7 +90,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(self: Pin<&mut Self>, item: PgMqTask<T>) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, item: PgMqTask<Vec<u8>>) -> Result<(), Self::Error> {
         let this = &mut self.get_mut().sink;
 
         this.items.push_back(item);
@@ -107,7 +107,7 @@ where
 
         while let Some(item) = this.items.pop_front() {
             let delay = calculate_delay_seconds(item.parts.run_at as i64);
-            let bytes = C::encode(&item.args).map_err(|e| PgmqError::ParsingError(Box::new(e)))?;
+            let bytes = item.args;
             let headers = Some(serde_json::Value::Object(item.parts.ctx.headers));
 
             messages.push(MessageWithDelay {
