@@ -13,10 +13,7 @@ async fn main() {
     PGMQueue::setup(&pool).await.unwrap();
     let mut backend = PGMQueue::new(pool, "a_workflow").await;
 
-    backend
-        .push_start(42)
-        .await
-        .unwrap();
+    backend.push_start(42).await.unwrap();
 
     async fn task1(task: u32) -> String {
         println!("Executing task1 with input: {}", task);
