@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.0-rc.2]
+
 - fix: improve sink and workflow process [#16]
 
 ## [0.1.0-rc.1]
@@ -21,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - chore: introduce a basic working version of apalis-pgmq [#5]
 
-[0.1.0-alpha.1]: https://github.com/olivierlacan/keep-a-changelog/releases/tag/v0.1.0-alpha.1
-[0.1.0-rc.1]: https://github.com/olivierlacan/keep-a-changelog/releases/tag/v0.1.0-rc.1
+[0.1.0-alpha.1]: https://github.com/apalis-dev/apalis-pgmq/releases/tag/v0.1.0-alpha.1
+[0.1.0-rc.1]: https://github.com/apalis-dev/apalis-pgmq/releases/tag/v0.1.0-rc.1
+[0.1.0-rc.2]: https://github.com/apalis-dev/apalis-pgmq/releases/tag/v0.1.0-rc.2
 [#5]: https://github.com/apalis-dev/apalis-pgmq/pull/5
 [#10]: https://github.com/apalis-dev/apalis-pgmq/pull/10
 [#16]: https://github.com/apalis-dev/apalis-pgmq/pull/16
