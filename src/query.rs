@@ -240,10 +240,10 @@ pub fn archive_batch(name: &str) -> Result<String, PgmqError> {
         WITH archived AS (
             DELETE FROM {PGMQ_SCHEMA}.{QUEUE_PREFIX}_{name}
             WHERE msg_id = ANY($1)
-            RETURNING msg_id, vt, read_ct, enqueued_at, message
+            RETURNING msg_id, vt, read_ct, enqueued_at, message, headers
         )
-        INSERT INTO {PGMQ_SCHEMA}.{ARCHIVE_PREFIX}_{name} (msg_id, vt, read_ct, enqueued_at, message)
-        SELECT msg_id, vt, read_ct, enqueued_at, message
+        INSERT INTO {PGMQ_SCHEMA}.{ARCHIVE_PREFIX}_{name} (msg_id, vt, read_ct, enqueued_at, message, headers)
+        SELECT msg_id, vt, read_ct, enqueued_at, message, headers
         FROM archived
         RETURNING msg_id;
         "

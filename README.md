@@ -27,7 +27,6 @@ use std::{collections::HashMap, env};
 
 use apalis::prelude::*;
 use apalis_pgmq::*;
-use futures::{self, SinkExt};
 
 #[tokio::main]
 async fn main() {
@@ -38,10 +37,10 @@ async fn main() {
     PGMQueue::setup(&pool).await.unwrap();
     let mut backend = PGMQueue::new(pool, "basic").await;
 
-    backend.send(Task::new(HashMap::new())).await.unwrap();
+    backend.push(42).await.unwrap();
 
     async fn send_reminder(
-        _msg: HashMap<String, String>,
+        _msg: usize,
         wrk: WorkerContext,
     ) -> Result<(), BoxDynError> {
         wrk.stop()?;
@@ -69,7 +68,7 @@ Track your jobs using [apalis-board](https://github.com/apalis-dev/apalis-board)
 - [x] Batch Sink
 - [x] BackendExt
 - [ ] Worker heartbeats
-- [ ] Workflow support
+- [x] Workflow support
 - [ ] Extensive Docs
 - [ ] Maximize compatibility with [pgmq](https://github.com/pgmq/pgmq)
 
