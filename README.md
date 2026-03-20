@@ -69,7 +69,7 @@ Track your jobs using [apalis-board](https://github.com/apalis-dev/apalis-board)
 - [x] Batch Sink
 - [x] BackendExt
 - [ ] Worker heartbeats
-- [ ] Workflow support
+- [x] Workflow support
 - [ ] Extensive Docs
 - [ ] Maximize compatibility with [pgmq](https://github.com/pgmq/pgmq)
 
