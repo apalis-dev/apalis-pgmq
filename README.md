@@ -27,7 +27,6 @@ use std::{collections::HashMap, env};
 
 use apalis::prelude::*;
 use apalis_pgmq::*;
-use futures::{self, SinkExt};
 
 #[tokio::main]
 async fn main() {
@@ -38,10 +37,10 @@ async fn main() {
     PGMQueue::setup(&pool).await.unwrap();
     let mut backend = PGMQueue::new(pool, "basic").await;
 
-    backend.send(Task::new(HashMap::new())).await.unwrap();
+    backend.push(42).await.unwrap();
 
     async fn send_reminder(
-        _msg: HashMap<String, String>,
+        _msg: usize,
         wrk: WorkerContext,
     ) -> Result<(), BoxDynError> {
         wrk.stop()?;
