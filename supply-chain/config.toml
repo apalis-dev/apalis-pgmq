@@ -557,7 +557,7 @@ version = "0.8.3"
 criteria = "safe-to-run"
 
 [[exemptions.pgmq]]
-version = "0.31.2"
+version = "0.32.0"
 criteria = "safe-to-run"
 
 [[exemptions.pin-project]]
