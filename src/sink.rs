@@ -75,7 +75,6 @@ where
             match pending.future.poll_unpin(cx) {
                 Poll::Ready(Ok(_msg_ids)) => {
                     this.pending_sends.pop_front();
-                    println!("Completed pending send to PgMq");
                 }
                 Poll::Ready(Err(e)) => {
                     this.pending_sends.pop_front();
