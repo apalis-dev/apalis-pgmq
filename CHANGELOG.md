@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.0-rc.4]
+
+- bump: to 0.1.0-rc.4 [#30]
+
 ## [0.1.0-rc.3]
 
 ## [0.1.0-rc.2]
@@ -32,3 +36,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#5]: https://github.com/apalis-dev/apalis-pgmq/pull/5
 [#10]: https://github.com/apalis-dev/apalis-pgmq/pull/10
 [#16]: https://github.com/apalis-dev/apalis-pgmq/pull/16
+[#30]: https://github.com/apalis-dev/apalis-pgmq/pull/30

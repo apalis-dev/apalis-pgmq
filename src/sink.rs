@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row, postgres::PgRow};
 use crate::{PGMQueue, PgMqTask, config::Config, errors::PgmqError, query::enqueue_batch};
 
 pin_project_lite::pin_project! {
-    pub(super) struct PgMqSink<T, C> {
+    pub struct PgMqSink<T, C> {
         conn: PgPool,
         config: Config<C>,
         items: VecDeque<PgMqTask<Vec<u8>>>,

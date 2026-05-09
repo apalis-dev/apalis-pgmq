@@ -17,19 +17,19 @@ version = "1.0.102"
 criteria = "safe-to-deploy"
 
 [[exemptions.apalis]]
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.9"
 criteria = "safe-to-run"
 
 [[exemptions.apalis-codec]]
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.apalis-core]]
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.apalis-workflow]]
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.9"
 criteria = "safe-to-run"
 
 [[exemptions.async-channel]]
@@ -136,6 +136,10 @@ criteria = "safe-to-deploy"
 version = "2.5.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.const-fnv1a-hash]]
+version = "1.1.0"
+criteria = "safe-to-run"
+
 [[exemptions.const-oid]]
 version = "0.9.6"
 criteria = "safe-to-deploy"
@@ -216,6 +220,54 @@ criteria = "safe-to-deploy"
 version = "0.5.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.facet]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-core]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-dessert]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-format]]
+version = "0.47.1"
+criteria = "safe-to-run"
+
+[[exemptions.facet-macro-parse]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-macro-types]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-macros]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-macros-impl]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-msgpack]]
+version = "0.46.1"
+criteria = "safe-to-run"
+
+[[exemptions.facet-path]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-reflect]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
+[[exemptions.facet-solver]]
+version = "0.46.0"
+criteria = "safe-to-run"
+
 [[exemptions.fastrand]]
 version = "1.9.0"
 criteria = "safe-to-deploy"
@@ -238,6 +290,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.foldhash]]
 version = "0.1.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.foldhash]]
+version = "0.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.foreign-types]]
@@ -329,6 +385,10 @@ version = "0.15.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.hashbrown]]
+version = "0.16.1"
+criteria = "safe-to-run"
+
+[[exemptions.hashbrown]]
 version = "0.17.0"
 criteria = "safe-to-deploy"
 
@@ -404,6 +464,10 @@ criteria = "safe-to-deploy"
 version = "2.3.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.iddqd]]
+version = "0.3.18"
+criteria = "safe-to-run"
+
 [[exemptions.idna]]
 version = "1.1.0"
 criteria = "safe-to-deploy"
@@ -411,6 +475,10 @@ criteria = "safe-to-deploy"
 [[exemptions.idna_adapter]]
 version = "1.2.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.impls]]
+version = "1.0.3"
+criteria = "safe-to-run"
 
 [[exemptions.indexmap]]
 version = "2.14.0"
@@ -492,6 +560,10 @@ criteria = "safe-to-deploy"
 version = "1.2.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.mutants]]
+version = "0.0.3"
+criteria = "safe-to-run"
+
 [[exemptions.native-tls]]
 version = "0.2.18"
 criteria = "safe-to-deploy"
@@ -557,7 +629,7 @@ version = "0.8.3"
 criteria = "safe-to-run"
 
 [[exemptions.pgmq]]
-version = "0.32.1"
+version = "0.33.5"
 criteria = "safe-to-run"
 
 [[exemptions.pin-project]]
@@ -672,6 +744,10 @@ criteria = "safe-to-deploy"
 version = "0.9.10"
 criteria = "safe-to-deploy"
 
+[[exemptions.rustc-hash]]
+version = "2.1.2"
+criteria = "safe-to-run"
+
 [[exemptions.rustix]]
 version = "0.37.28"
 criteria = "safe-to-deploy"
@@ -768,6 +844,10 @@ criteria = "safe-to-deploy"
 version = "1.15.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.smallvec]]
+version = "2.0.0-alpha.12"
+criteria = "safe-to-run"
+
 [[exemptions.socket2]]
 version = "0.4.10"
 criteria = "safe-to-deploy"
@@ -819,6 +899,10 @@ criteria = "safe-to-deploy"
 [[exemptions.stringprep]]
 version = "0.1.5"
 criteria = "safe-to-deploy"
+
+[[exemptions.strsim]]
+version = "0.11.1"
+criteria = "safe-to-run"
 
 [[exemptions.subtle]]
 version = "2.6.1"
@@ -935,6 +1019,10 @@ criteria = "safe-to-deploy"
 [[exemptions.unicode-xid]]
 version = "0.2.6"
 criteria = "safe-to-deploy"
+
+[[exemptions.unsynn]]
+version = "0.3.0"
+criteria = "safe-to-run"
 
 [[exemptions.untrusted]]
 version = "0.9.0"
