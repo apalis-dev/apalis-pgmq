@@ -29,19 +29,14 @@ impl<C> Clone for Config<C> {
 }
 
 impl<Codec> Config<Codec> {
-    /// Creates a new configuration with default values
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Gets the queue name
     pub fn queue(&self) -> &Queue {
         &self.queue
     }
 
     /// Sets the queue name (builder style)
-    pub fn with_queue(mut self, queue: String) -> Self {
-        self.queue = Queue::from(queue);
+    pub fn with_queue<S: AsRef<str>>(mut self, queue: S) -> Self {
+        self.queue = Queue::from(queue.as_ref());
         self
     }
 
@@ -77,9 +72,20 @@ impl<Codec> Config<Codec> {
         self.visibility_timeout = timeout;
         self
     }
+
+    /// Specify your own codec
+    pub fn with_codec<C>(self) -> Config<C> {
+        Config {
+            poll_strategy: self.poll_strategy,
+            buffer_size: self.buffer_size,
+            queue: self.queue,
+            visibility_timeout: self.visibility_timeout,
+            _codec: PhantomData,
+        }
+    }
 }
 
-impl<C> Default for Config<C> {
+impl Default for Config<JsonCodec<Vec<u8>>> {
     fn default() -> Self {
         let config = BackoffConfig::default().with_jitter(0.9);
         let interval = IntervalStrategy::new(Duration::from_millis(50)).with_backoff(config);

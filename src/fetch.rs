@@ -5,7 +5,7 @@ use crate::{Message, errors::PgmqError};
 // Executes a query and returns multiple rows
 // If the query returns no rows, None is returned
 // This function is intended for internal use.
-pub(crate) async fn fetch_messages(
+pub async fn fetch_messages(
     query: &str,
     connection: &PgPool,
 ) -> Result<Option<Vec<Message>>, PgmqError> {

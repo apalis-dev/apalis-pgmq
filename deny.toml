@@ -3,7 +3,8 @@ exclude-unpublished = true
 
 [advisories]
 unmaintained = "none"
-ignore = []
+# TODO: @geofmureithi Keep track sqlx dependencies
+ignore = ["RUSTSEC-2026-0104", "RUSTSEC-2026-0098", "RUSTSEC-2026-0099"]  
 
 [licenses]
 confidence-threshold = 0.8
@@ -15,7 +16,7 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     "ISC",
-    "CDLA-Permissive-2.0"
+    "CDLA-Permissive-2.0",
 ]
 
 [bans]
@@ -38,6 +39,7 @@ skip-tree = [
     { name = "rand" },
     { name = "rand_chacha" },
     { name = "rand_core" },
+    { name = "redox_syscall" },
 ]
 
 [sources]

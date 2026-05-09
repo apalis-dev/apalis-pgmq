@@ -70,6 +70,7 @@ Track your jobs using [apalis-board](https://github.com/apalis-dev/apalis-board)
 - [ ] Worker heartbeats
 - [x] Workflow support
 - [ ] Extensive Docs
+- [ ] Apalis board support
 - [ ] Maximize compatibility with [pgmq](https://github.com/pgmq/pgmq)
 
 ## Comparison with pgmq

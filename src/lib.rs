@@ -21,7 +21,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 pub use sqlx::{PgPool, Postgres};
 
-use crate::{
+pub use crate::{
     config::Config, context::PgMqContext, errors::PgmqError, fetch::fetch_messages, sink::PgMqSink,
 };
 
@@ -118,7 +118,7 @@ impl<Args, C: Codec<Args, Compact = Vec<u8>>> PGMQueue<Args, C> {
     }
 }
 
-struct Message {
+pub struct Message {
     msg_id: i64,
     visibility_time: DateTime<Utc>,
     read_count: i32,
