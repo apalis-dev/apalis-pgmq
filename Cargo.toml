@@ -50,7 +50,7 @@ apalis = { version = "1.0.0-rc.9" }
 apalis-workflow = { version = "0.1.0-rc.9", features = ["rand"]}
 
 # For the codec example
-facet = "0.46.0"
+facet = "0.46.1"
 facet-msgpack = "0.46.1"
 
 [package.metadata.cargo-udeps.ignore]
