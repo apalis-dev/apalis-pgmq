@@ -35,7 +35,7 @@ url = "2.5.8"
 tracing = "0.1.44"
 futures = "0.3.31"
 serde = "1.0.228"
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 pin-project-lite = "0.2.16"
 tokio = { version = "1", features = [
     "rt",
