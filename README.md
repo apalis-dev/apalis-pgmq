@@ -5,7 +5,7 @@ Background task processing in rust using apalis and pgmq
 ## Features
 
 - **Reliable message queue** using `pgmq` as the backend.
-- **Multiple storage types**: standard polling and `trigger` based storages.
+- **Multiple storage types**: standard polling and `trigger` based polling.
 - **Custom codecs** for serializing/deserializing job arguments as bytes.
 - **Integration with `apalis` workers and middleware.**
 - **Observability**: Monitor and manage tasks using [apalis-board](https://github.com/apalis-dev/apalis-board).
@@ -17,7 +17,17 @@ Background task processing in rust using apalis and pgmq
 The fastest way to get started is by running the Docker image, where PGMQ comes pre-installed in Postgres.
 
 ```sh
-docker run -d --name pgmq-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 ghcr.io/pgmq/pg18-pgmq:v1.7.0
+docker run -d --name pgmq-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 ghcr.io/pgmq/pg18-pgmq:v1.10.0
+```
+
+Then connect and enable PGMQ:
+
+```sh
+psql postgres://postgres:postgres@localhost:5432/postgres
+```
+
+```sh
+postgres=# CREATE EXTENSION pgmq;
 ```
 
 ### Basic Worker Example
@@ -35,7 +45,7 @@ async fn main() {
         .unwrap();
 
     PGMQueue::setup(&pool).await.unwrap();
-    let mut backend = PGMQueue::new(pool, "basic").await;
+    let mut backend = PGMQueue::new(pool);
 
     backend.push(42).await.unwrap();
 
@@ -63,23 +73,33 @@ Track your jobs using [apalis-board](https://github.com/apalis-dev/apalis-board)
 ## Roadmap
 
 - [x] Eager Fetcher
-- [ ] Lazy Fetcher (using NOTIFY)
-- [ ] Shared Fetcher (Multiple queues on the same connection)
+- [x] Lazy Fetcher (using NOTIFY)
 - [x] Batch Sink
-- [x] BackendExt
-- [ ] Worker heartbeats
+- [x] Bytes compatibility
+- [x] Worker heartbeats
 - [x] Workflow support
-- [ ] Extensive Docs
+- [x] Extensive Docs
 - [ ] Apalis board support
-- [ ] Maximize compatibility with [pgmq](https://github.com/pgmq/pgmq)
+- [x] Maximize compatibility with [pgmq](https://github.com/pgmq/pgmq)
 
-## Comparison with pgmq
+## Compatibility with pgmq
 
-Our version of `pgmq` differs in several ways to offer better support for `apalis`:
+By default `apalis` recommends storing args as bytes. This allows features such as custom codecs, encryption and compression.
 
-1. Messages are stored as `BYTEA` instead of `JSONB` to offer better codec support.
-2. Uses `headers` which is not yet supported in the rs version
-3. Uses the `apalis_pgmq` schema instead of `pgmq`.
+`apalis-pgmq` offers the ability to use bytes at the expense of compatibility.
+
+If you turn on the `bytes-compat`, a new schema `apalis_pgmq` is created with bytes support.
+
+If you want to use the bytes feature with sql commands use `apalis_pgmq` schema instead of `pgmq`
+
+eg:
+
+```sql
+SELECT apalis_pgmq.create($1);
+```
+
+**Note**: The `bytes-compat` feature is not stable and is currently a patch. Use it only when necessary and you understand future releases will break until the json<->bytes issue is solved upstream
+
 
 ## Credits
 

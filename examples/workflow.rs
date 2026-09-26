@@ -11,9 +11,10 @@ async fn main() {
         .unwrap();
 
     PGMQueue::setup(&pool).await.unwrap();
-    let mut backend = PGMQueue::new(pool, "a_workflow").await;
+    let config = Config::default().queue("a_workflow");
+    let mut backend = PGMQueue::new(pool).with_config(config);
 
-    backend.push_start(42).await.unwrap();
+    backend.push(42).await.unwrap();
 
     async fn task1(task: u32) -> String {
         println!("Executing task1 with input: {}", task);
@@ -28,8 +29,9 @@ async fn main() {
         assert_eq!(task, 142);
         worker.stop().unwrap();
     }
-    let workflow = Workflow::new("test_workflow")
+    let workflow = SteppedFlow::new("test_workflow")
         .and_then(task1)
+        .delay_for(Duration::from_secs(5))
         .and_then(task2)
         .and_then(task3);
 

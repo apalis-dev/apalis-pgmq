@@ -1,242 +1,606 @@
 #![doc = include_str!("../README.md")]
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+    collections::VecDeque,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use apalis_codec::json::JsonCodec;
 use apalis_core::{
     backend::{
-        Backend, BackendExt, TaskStream,
-        codec::Codec,
-        poll_strategy::{PollContext, PollStrategyExt},
-        queue::Queue,
+        Backend, BackendConfig, WireFormatBackend, finalize::Durable, future::BoxSyncFuture,
     },
-    task::{Task, attempt::Attempt, task_id::TaskId},
+    task::Task,
+    timer::Delay,
     worker::{context::WorkerContext, ext::ack::AcknowledgeLayer},
 };
-use chrono::{DateTime, Utc};
-use futures::{
-    StreamExt,
-    stream::{self, BoxStream},
-};
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use futures::{FutureExt, future::BoxFuture};
+use pgmq::{PgmqError, util::CheckedName};
 pub use sqlx::{PgPool, Postgres};
+use tracing::{debug, info, trace};
 
-pub use crate::{
-    config::Config, context::PgMqContext, errors::PgmqError, fetch::fetch_messages, sink::PgMqSink,
-};
+use crate::config::StorageMode;
+pub use crate::{config::Config, errors::Error, fetch::fetch_next, sink::PgMqSink};
 
 mod ack;
 mod config;
-mod context;
 mod errors;
 mod fetch;
 pub mod query;
 mod sink;
-mod util;
 
-pub const QUEUE_PREFIX: &str = r#"q"#;
-pub const ARCHIVE_PREFIX: &str = r#"a"#;
+#[cfg(feature = "bytes-compat")]
 pub const PGMQ_SCHEMA: &str = "apalis_pgmq";
 
-pub type PgMqTask<Args> = Task<Args, PgMqContext, i64>;
+#[cfg(not(feature = "bytes-compat"))]
+pub const PGMQ_SCHEMA: &str = "pgmq";
 
-pub struct PGMQueue<Args, Codec = JsonCodec<Vec<u8>>> {
+pub const WORKERS_PREFIX: &str = r#"w"#;
+pub const RESULTS_PREFIX: &str = r#"r"#;
+
+#[cfg(feature = "bytes-compat")]
+pub type CompactType = Vec<u8>;
+
+#[cfg(not(feature = "bytes-compat"))]
+pub type CompactType = serde_json::Value;
+
+pub type PgMqTask<Args = CompactType> = Task<Args>;
+
+pub struct PGMQueue<Args> {
     connection: PgPool,
-    config: Config<Codec>,
-    sink: PgMqSink<Args, Codec>,
-    _args: PhantomData<Args>,
+    config: Config,
+    sink: PgMqSink<Args>,
+    codec: JsonCodec<CompactType>,
+    state: State,
+    heartbeat_timer: Option<Delay>,
 }
 
-impl<Args, C> Clone for PGMQueue<Args, C> {
+impl<Args> Clone for PGMQueue<Args> {
     fn clone(&self) -> Self {
         Self {
             connection: self.connection.clone(),
             config: self.config.clone(),
             sink: self.sink.clone(),
-            _args: self._args,
+            codec: self.codec.clone(),
+            state: State::Pre,
+            heartbeat_timer: None,
         }
     }
 }
 
 impl PGMQueue<()> {
-    pub async fn setup<'c, E: sqlx::Executor<'c, Database = Postgres>>(
-        executor: E,
-    ) -> Result<bool, PgmqError> {
-        sqlx::query("CREATE EXTENSION IF NOT EXISTS pgmq CASCADE;")
-            .execute(executor)
+    pub async fn setup(pool: &PgPool) -> Result<(), PgmqError> {
+        let queue = pgmq::PGMQueueExt::new_with_pool(pool.clone()).await;
+        queue.init_migrations_table("1.10.0").await?;
+
+        // This allows us to use bytes instead of json
+        #[cfg(feature = "bytes-compat")]
+        sqlx::raw_sql(include_str!("../patches/json_to_bytes.sql"))
+            .execute(pool)
             .await
-            .map(|_| true)
-            .map_err(PgmqError::from)
+            .map_err(|e| PgmqError::InstallationError(e.to_string()))?;
+        Ok(())
     }
-    async fn create<'c, E>(queue_name: &str, executor: E) -> Result<(), PgmqError>
-    where
-        E: sqlx::Acquire<'c, Database = Postgres>,
-    {
-        let mut tx = executor.begin().await?;
-        let setup = query::init_queue_client_only(queue_name, false)?;
-        for q in setup {
-            sqlx::query(&q).execute(&mut *tx).await?;
+    pub async fn create(pool: &PgPool, config: &Config) -> Result<(), Error> {
+        let mut tx = pool.begin().await?;
+        let name = CheckedName::new(config.queue.as_ref()).unwrap();
+        match &config.storage_mode {
+            StorageMode::Default => {
+                sqlx::query(&format!("SELECT {PGMQ_SCHEMA}.create($1)"))
+                    .bind(name.as_ref())
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            StorageMode::Unlogged => {
+                sqlx::query(&format!("SELECT {PGMQ_SCHEMA}.create_unlogged($1)"))
+                    .bind(name.as_ref())
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            StorageMode::Partitioned {
+                partition_interval,
+                retention_interval,
+            } => {
+                sqlx::query(&format!(
+                    "SELECT {PGMQ_SCHEMA}.create_partitioned($1, $2, $3)"
+                ))
+                .bind(name.as_ref())
+                .bind(partition_interval)
+                .bind(retention_interval)
+                .execute(&mut *tx)
+                .await?;
+            }
+        };
+        if config.track_worker {
+            let query = query::create_workers(name)?;
+            sqlx::query(&query).execute(&mut *tx).await?;
+        }
+
+        if config.store_results {
+            let query = query::create_results(name)?;
+            sqlx::query(&query).execute(&mut *tx).await?;
         }
         tx.commit().await?;
         Ok(())
     }
 }
 
-impl<Args: Serialize + DeserializeOwned> PGMQueue<Args> {
-    /// initialize a PGMQ connection with your own SQLx Postgres connection pool
-    pub async fn new(pool: PgPool, queue_name: &str) -> Self {
-        let config: Config<JsonCodec<Vec<u8>>> =
-            Config::default().with_queue(queue_name.to_string());
-        PGMQueue::new_with_config(pool, config).await
-    }
-}
-
-impl<Args, C: Codec<Args, Compact = Vec<u8>>> PGMQueue<Args, C> {
-    pub async fn new_with_config(pool: PgPool, config: Config<C>) -> Self {
-        PGMQueue::create(config.queue().as_ref(), &pool)
-            .await
-            .expect("Queue to be created");
+impl<Args> PGMQueue<Args> {
+    pub fn new(pool: PgPool) -> Self {
+        let config: Config = Config::default();
         Self {
-            sink: PgMqSink::new(pool.clone(), config.clone()),
+            sink: PgMqSink::new(),
             connection: pool,
             config,
-            _args: PhantomData,
+            codec: JsonCodec::default(),
+            state: State::Pre,
+            heartbeat_timer: None,
         }
     }
 
-    async fn read_batch(
-        config: Config<C>,
-        connection: PgPool,
-    ) -> Result<Option<Vec<Message>>, PgmqError> {
-        let query = &query::read(
-            config.queue().as_ref(),
-            config.visibility_timeout().as_secs() as i32,
-            config.buffer_size() as i32,
-        )?;
-        let messages = fetch_messages(query, &connection).await?;
-        Ok(messages)
+    pub fn with_config(mut self, config: Config) -> Self {
+        self.config = config;
+        self
+    }
+
+    async fn read_batch(pool: PgPool, config: Config) -> Result<Vec<PgMqTask>, Error> {
+        let tasks = fetch_next(&pool, &config).await?;
+        Ok(tasks)
+    }
+    fn register_worker(
+        &self,
+        worker: &WorkerContext,
+    ) -> Result<BoxFuture<'static, Result<(), Error>>, Error> {
+        let query = query::register_worker(CheckedName::new(self.config.queue.as_ref())?)?;
+
+        let pool = self.connection.clone();
+        let worker = worker.clone();
+        let heartbeat = self.config.heartbeat.as_secs();
+        Ok(async move {
+            let name = worker.name();
+            let service = worker.get_service();
+            sqlx::query(&query)
+                .bind(name)
+                .bind(service)
+                .bind(heartbeat as i64)
+                .execute(&pool)
+                .await?;
+
+            Ok(())
+        }
+        .boxed())
     }
 }
 
-pub struct Message {
-    msg_id: i64,
-    visibility_time: DateTime<Utc>,
-    read_count: i32,
-    enqueued_at: DateTime<Utc>,
-    message: Vec<u8>,
-    headers: Value,
+enum State {
+    Pre,
+    Create(BoxSyncFuture<Result<(), Error>>),
+    RegisterWorker(BoxSyncFuture<Result<(), Error>>),
+    Ready,
+    HeartBeat(BoxSyncFuture<Result<(), Error>>),
+    Inflight(BoxSyncFuture<Result<Vec<PgMqTask>, Error>>),
+    Buffering(VecDeque<PgMqTask>),
+    CleanUp(BoxSyncFuture<Result<(), Error>>),
 }
 
-impl<Args, C> Backend for PGMQueue<Args, C>
+impl<Args> Backend for PGMQueue<Args>
+where
+    Args: Send + 'static,
+{
+    type Task = PgMqTask;
+    type Error = Error;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut Context<'_>,
+        worker: &WorkerContext,
+    ) -> Poll<Result<(), Self::Error>> {
+        loop {
+            match &mut self.state {
+                State::Pre => {
+                    info!(
+                        queue = %self.config.queue,
+                        track_worker = self.config.track_worker,
+                        "pgmq backend initializing"
+                    );
+
+                    let config = self.config.clone();
+                    let pool = self.connection.clone();
+
+                    self.state = State::Create(
+                        async move { PGMQueue::create(&pool, &config).await }
+                            .boxed()
+                            .into(),
+                    );
+
+                    debug!("pgmq backend create future dispatched");
+                }
+
+                State::Create(fut) => match fut.poll_unpin(cx) {
+                    Poll::Pending => {
+                        trace!("pgmq backend creation pending");
+                        return Poll::Pending;
+                    }
+
+                    Poll::Ready(Ok(())) => {
+                        info!("pgmq backend initialized");
+
+                        if !self.config.track_worker {
+                            debug!("worker tracking disabled");
+
+                            self.heartbeat_timer = Some(Delay::new(self.config.heartbeat));
+                            self.state = State::Ready;
+                            continue;
+                        }
+
+                        debug!(
+                            worker = %worker.name(),
+                            "registering worker"
+                        );
+
+                        self.state = State::RegisterWorker(self.register_worker(worker)?.into());
+                    }
+
+                    Poll::Ready(Err(e)) => {
+                        info!(
+                            error = ?e,
+                            "pgmq backend initialization failed"
+                        );
+
+                        return Poll::Ready(Err(e));
+                    }
+                },
+
+                State::RegisterWorker(fut) => match fut.poll_unpin(cx) {
+                    Poll::Pending => {
+                        trace!(
+                            worker = %worker.name(),
+                            "worker registration pending"
+                        );
+
+                        return Poll::Pending;
+                    }
+
+                    Poll::Ready(Ok(())) => {
+                        info!(
+                            worker = %worker.name(),
+                            heartbeat = ?self.config.heartbeat,
+                            "worker registered"
+                        );
+
+                        self.heartbeat_timer = Some(Delay::new(self.config.heartbeat));
+                        self.state = State::Ready;
+
+                        return Poll::Ready(Ok(()));
+                    }
+
+                    Poll::Ready(Err(e)) => {
+                        info!(
+                            worker = %worker.name(),
+                            error = ?e,
+                            "worker registration failed"
+                        );
+
+                        return Poll::Ready(Err(e));
+                    }
+                },
+
+                State::HeartBeat(fut) => match fut.poll_unpin(cx) {
+                    Poll::Pending => {
+                        trace!(
+                            worker = %worker.name(),
+                            "worker heartbeat pending"
+                        );
+
+                        return Poll::Pending;
+                    }
+
+                    Poll::Ready(Ok(())) => {
+                        debug!(
+                            worker = %worker.name(),
+                            "worker heartbeat completed"
+                        );
+
+                        self.heartbeat_timer = Some(Delay::new(self.config.heartbeat));
+                        self.state = State::Ready;
+
+                        return Poll::Ready(Ok(()));
+                    }
+
+                    Poll::Ready(Err(e)) => {
+                        info!(
+                            worker = %worker.name(),
+                            error = ?e,
+                            "worker heartbeat failed"
+                        );
+
+                        return Poll::Ready(Err(e));
+                    }
+                },
+
+                State::Ready => {
+                    if self.heartbeat_timer.is_none() {
+                        if self.config.track_worker {
+                            debug!(
+                                worker = %worker.name(),
+                                "worker heartbeat timer missing; re-registering worker"
+                            );
+
+                            self.state =
+                                State::RegisterWorker(self.register_worker(worker)?.into());
+
+                            continue;
+                        }
+
+                        trace!("initializing heartbeat timer");
+
+                        self.heartbeat_timer = Some(Delay::new(self.config.heartbeat));
+                    }
+
+                    let heartbeat_due = Pin::new(self.heartbeat_timer.as_mut().unwrap())
+                        .poll(cx)
+                        .is_ready();
+
+                    trace!(
+                        heartbeat_due,
+                        worker = %worker.name(),
+                        "evaluating heartbeat timer"
+                    );
+
+                    if heartbeat_due {
+                        debug!(
+                            worker = %worker.name(),
+                            queue = %self.config.queue,
+                            "heartbeat due; dispatching heartbeat"
+                        );
+
+                        let pool = self.connection.clone();
+                        let worker = worker.clone();
+
+                        let query =
+                            query::heartbeat_worker(CheckedName::new(self.config.queue.as_ref())?)?;
+
+                        let fut = async move {
+                            trace!(
+                                worker = %worker.name(),
+                                "executing worker heartbeat query"
+                            );
+
+                            sqlx::query(&query)
+                                .bind(worker.name())
+                                .execute(&pool)
+                                .await?;
+
+                            Ok(())
+                        };
+
+                        self.state = State::HeartBeat(fut.boxed().into());
+                        continue;
+                    }
+
+                    trace!(
+                        worker = %worker.name(),
+                        "poll_ready: ready"
+                    );
+
+                    return Poll::Ready(Ok(()));
+                }
+
+                State::Inflight(_) => {
+                    trace!("poll_ready: batch fetch in progress");
+                    return Poll::Ready(Ok(()));
+                }
+
+                State::Buffering(buf) => {
+                    trace!(buffered = buf.len(), "poll_ready: tasks buffered");
+
+                    return Poll::Ready(Ok(()));
+                }
+
+                State::CleanUp(_) => {
+                    unreachable!("cleanup during poll_ready")
+                }
+            }
+        }
+    }
+
+    fn poll_next(
+        &mut self,
+        cx: &mut Context<'_>,
+        _worker: &WorkerContext,
+    ) -> Poll<Option<Result<Self::Task, Self::Error>>> {
+        loop {
+            match &mut self.state {
+                State::Pre
+                | State::Create(_)
+                | State::CleanUp(_)
+                | State::HeartBeat(_)
+                | State::RegisterWorker(_) => {
+                    unreachable!("poll_ready must have been called before poll_next")
+                }
+
+                State::Ready => {
+                    debug!(
+                        queue = %self.config.queue,
+                        batch_size = self.config.batch_size,
+                        "dispatching pgmq batch fetch"
+                    );
+
+                    let config = self.config.clone();
+                    let pool = self.connection.clone();
+
+                    self.state = State::Inflight(Self::read_batch(pool, config).boxed().into());
+                }
+
+                State::Buffering(buf) => {
+                    if let Some(task) = buf.pop_front() {
+                        trace!(remaining = buf.len(), "returning buffered pgmq task");
+
+                        return Poll::Ready(Some(Ok(task)));
+                    }
+
+                    debug!("pgmq task buffer exhausted");
+                    self.state = State::Ready;
+                }
+
+                State::Inflight(fut) => match fut.poll_unpin(cx) {
+                    Poll::Pending => {
+                        trace!("pgmq batch fetch pending");
+                        return Poll::Pending;
+                    }
+
+                    Poll::Ready(Ok(res)) => {
+                        debug!(fetched = res.len(), "pgmq batch fetch completed");
+
+                        self.state = State::Buffering(VecDeque::from(res));
+                        continue;
+                    }
+
+                    Poll::Ready(Err(e)) => {
+                        info!(
+                            error = ?e,
+                            "pgmq batch fetch failed"
+                        );
+
+                        return Poll::Ready(Some(Err(e)));
+                    }
+                },
+            }
+        }
+    }
+
+    fn poll_close(
+        &mut self,
+        cx: &mut Context<'_>,
+        worker: &WorkerContext,
+    ) -> Poll<Result<(), Self::Error>> {
+        loop {
+            match &mut self.state {
+                State::Pre | State::Create(_) | State::RegisterWorker(_) => {
+                    unreachable!("poll_ready must have been called before poll_next")
+                }
+
+                State::Ready => {
+                    info!(
+                        worker = %worker.name(),
+                        "pgmq backend closing"
+                    );
+
+                    return Poll::Ready(Ok(()));
+                }
+
+                State::Inflight(_) => {
+                    debug!("pgmq backend closing while batch fetch is in progress");
+
+                    return Poll::Ready(Ok(()));
+                }
+
+                State::Buffering(buf) => {
+                    if buf.is_empty() {
+                        debug!("pgmq task buffer empty; closing");
+
+                        self.state = State::Ready;
+                        continue;
+                    }
+
+                    let config = self.config.clone();
+                    let pool = self.connection.clone();
+
+                    let tasks: Vec<_> = std::mem::take(buf)
+                        .iter()
+                        .map(|s| s.task_id().unwrap().as_int().unwrap() as i64)
+                        .collect();
+
+                    debug!(
+                        task_count = tasks.len(),
+                        queue = %config.queue,
+                        "releasing buffered pgmq tasks"
+                    );
+
+                    self.state = State::CleanUp(
+                        async move {
+                            trace!(
+                                task_count = tasks.len(),
+                                queue = %config.queue,
+                                "executing pgmq visibility reset"
+                            );
+
+                            let query = format!("SELECT {PGMQ_SCHEMA}.set_vt($1, $2, 0);");
+
+                            sqlx::query(&query)
+                                .bind(config.queue.as_ref())
+                                .bind(tasks)
+                                .execute(&pool)
+                                .await?;
+
+                            debug!("pgmq visibility reset completed");
+
+                            Ok(())
+                        }
+                        .boxed()
+                        .into(),
+                    );
+                }
+
+                State::HeartBeat(fut) | State::CleanUp(fut) => match fut.poll_unpin(cx) {
+                    Poll::Pending => {
+                        trace!("pgmq close operation pending");
+                        return Poll::Pending;
+                    }
+
+                    Poll::Ready(Ok(_)) => {
+                        debug!("pgmq close operation completed");
+
+                        self.state = State::Ready;
+                        continue;
+                    }
+
+                    Poll::Ready(Err(e)) => {
+                        info!(
+                            error = ?e,
+                            "pgmq close operation failed"
+                        );
+
+                        return Poll::Ready(Err(e));
+                    }
+                },
+            }
+        }
+    }
+}
+
+impl<Args> BackendConfig for PGMQueue<Args>
 where
     Args: Send + Sync + 'static + Unpin,
-    C: Codec<Args, Compact = Vec<u8>> + Send + Sync + 'static,
-    C::Error: std::error::Error + Send + Sync + 'static,
 {
     type Args = Args;
 
-    type Context = PgMqContext;
-
-    type Beat = BoxStream<'static, Result<(), PgmqError>>;
-
-    type Error = PgmqError;
-
-    type IdType = i64;
+    type Id = u64;
 
     type Layer = AcknowledgeLayer<Self>;
 
-    type Stream = TaskStream<PgMqTask<Args>, PgmqError>;
+    type Config = Config;
 
-    fn heartbeat(&self, _worker: &WorkerContext) -> Self::Beat {
-        Box::pin(stream::pending())
-    }
+    type Kind = Durable;
 
-    fn middleware(&self) -> Self::Layer {
+    fn middleware(&mut self, _: &mut WorkerContext) -> Self::Layer {
         AcknowledgeLayer::new(self.clone())
     }
 
-    fn poll(self, worker: &WorkerContext) -> Self::Stream {
-        self.poll_basic(worker)
-            .map(|a| match a {
-                Ok(Some(task)) => Ok(Some(
-                    task.try_map(|t| C::decode(&t))
-                        .map_err(|e| PgmqError::ParsingError(e.into()))?,
-                )),
-                Ok(None) => Ok(None),
-                Err(e) => Err(e),
-            })
-            .boxed()
+    fn config(&self) -> &Self::Config {
+        &self.config
     }
 }
 
-impl<Args: Send + Sync + 'static, Decode: Codec<Args, Compact = Vec<u8>> + Send + 'static>
-    PGMQueue<Args, Decode>
-{
-    fn poll_basic(self, worker: &WorkerContext) -> TaskStream<PgMqTask<Vec<u8>>, PgmqError> {
-        let ctx = PollContext::new(worker.clone(), Arc::default());
-        let poller = self.config.poll_strategy().clone().build_stream(&ctx);
-        stream::unfold(
-            (self, poller, Vec::new()),
-            |(backend, mut poller, mut buf)| async move {
-                if let Some(msg) = buf.pop() {
-                    return Some((Ok(msg), (backend, poller, buf)));
-                }
-
-                poller.next().await;
-
-                match Self::read_batch(backend.config.clone(), backend.connection.clone()).await {
-                    Ok(Some(messages)) => {
-                        buf = messages;
-                        buf.reverse();
-                        let msg = buf.pop().unwrap();
-                        Some((Ok(msg), (backend, poller, buf)))
-                    }
-                    Ok(None) => None,
-                    Err(e) => Some((Err(e), (backend, poller, buf))),
-                }
-            },
-        )
-        .map(|res| match res {
-            Ok(raw) => {
-                let ctx = PgMqContext {
-                    enqueued_at: raw.enqueued_at,
-                    headers: raw
-                        .headers
-                        .as_object()
-                        .cloned()
-                        .ok_or(PgmqError::ParsingError("Headers are not an object".into()))?,
-                };
-                let task = Task::builder(raw.message)
-                    .with_task_id(TaskId::new(raw.msg_id))
-                    .with_attempt(Attempt::new_with_value(raw.read_count as usize))
-                    .run_at_timestamp(raw.visibility_time.timestamp() as u64)
-                    .with_ctx(ctx)
-                    .build();
-                Ok(Some(task))
-            }
-            Err(e) => Err(e),
-        })
-        .boxed()
-    }
-}
-
-impl<Args: Sync, Decode: Sync> BackendExt for PGMQueue<Args, Decode>
+impl<Args> WireFormatBackend for PGMQueue<Args>
 where
     Args: Send + 'static + Unpin,
-    Decode: Codec<Args, Compact = Vec<u8>> + Send + 'static,
-    Decode::Error: std::error::Error + Send + Sync + 'static,
 {
-    type Compact = Vec<u8>;
+    type Compact = CompactType;
 
-    type Codec = Decode;
-    type CompactStream = TaskStream<PgMqTask<Vec<u8>>, Self::Error>;
-
-    fn get_queue(&self) -> Queue {
-        self.config.queue().clone()
-    }
-
-    fn poll_compact(self, worker: &WorkerContext) -> Self::CompactStream {
-        self.poll_basic(worker).boxed()
+    type Codec = JsonCodec<CompactType>;
+    fn codec(&self) -> &Self::Codec {
+        &self.codec
     }
 }
 
@@ -256,7 +620,8 @@ mod tests {
             .unwrap();
 
         PGMQueue::setup(&pool).await.unwrap();
-        let mut backend = PGMQueue::new(pool, "basic_test").await;
+        let config = Config::default().queue("basic_test");
+        let mut backend = PGMQueue::new(pool).with_config(config);
 
         backend.push_task(Task::new(HashMap::new())).await.unwrap();
 
