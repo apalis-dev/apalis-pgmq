@@ -1,101 +1,109 @@
-use std::{marker::PhantomData, time::Duration};
+use std::time::Duration;
 
-use apalis_codec::json::JsonCodec;
-use apalis_core::backend::{
-    poll_strategy::{BackoffConfig, IntervalStrategy, MultiStrategy, StrategyBuilder},
-    queue::Queue,
-};
+use apalis_core::backend::queue::Queue;
+use pgmq::util::check_input;
 
-/// Configuration for apalis-pgmq
-#[derive(Debug)]
-pub struct Config<Codec = JsonCodec<Vec<u8>>> {
-    poll_strategy: MultiStrategy,
-    buffer_size: usize,
-    queue: Queue,
-    visibility_timeout: Duration,
-    _codec: PhantomData<Codec>,
+/// Configuration for a PGMQ-backed queue.
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// Maximum number of messages fetched in a single batch.
+    pub batch_size: usize,
+
+    /// The PGMQ queue to use.
+    pub queue: Queue,
+
+    /// The default heartbeat to wake the worker
+    ///
+    /// Will call a keep alive if [`Self::track_worker`] is true
+    pub heartbeat: Duration,
+
+    /// How long a message remains invisible after being fetched.
+    pub visibility_timeout: Duration,
+
+    /// The storage mode used by the queue.
+    pub storage_mode: StorageMode,
+
+    /// Whether worker information should be tracked.
+    pub track_worker: bool,
+
+    /// Whether task results should be stored.
+    pub store_results: bool,
 }
 
-impl<C> Clone for Config<C> {
-    fn clone(&self) -> Self {
+impl Default for Config {
+    fn default() -> Self {
         Self {
-            poll_strategy: self.poll_strategy.clone(),
-            buffer_size: self.buffer_size,
-            queue: self.queue.clone(),
-            visibility_timeout: self.visibility_timeout,
-            _codec: self._codec,
+            heartbeat: Duration::from_secs(30),
+            batch_size: 10,
+            queue: Queue::from("default"),
+            visibility_timeout: Duration::from_secs(30),
+            storage_mode: StorageMode::Default,
+            track_worker: false,
+            store_results: false,
         }
     }
 }
 
-impl<Codec> Config<Codec> {
-    /// Gets the queue name
-    pub fn queue(&self) -> &Queue {
-        &self.queue
-    }
-
-    /// Sets the queue name (builder style)
-    pub fn with_queue<S: AsRef<str>>(mut self, queue: S) -> Self {
-        self.queue = Queue::from(queue.as_ref());
+impl Config {
+    /// Sets the maximum number of messages fetched in a single batch.
+    pub fn batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size;
         self
     }
 
-    /// Gets the polling strategy
-    pub fn poll_strategy(&self) -> &MultiStrategy {
-        &self.poll_strategy
-    }
-
-    /// Sets the polling strategy (builder style)
-    pub fn with_poll_strategy(mut self, strategy: MultiStrategy) -> Self {
-        self.poll_strategy = strategy;
+    /// Sets the queue used by this configuration.
+    pub fn queue(mut self, queue: impl AsRef<str>) -> Self {
+        check_input(queue.as_ref()).expect("The queue name must be invalid");
+        self.queue = queue.as_ref().into();
         self
     }
 
-    /// Gets the buffer size
-    pub fn buffer_size(&self) -> usize {
-        self.buffer_size
-    }
-
-    /// Sets the buffer size (builder style)
-    pub fn with_buffer_size(mut self, size: usize) -> Self {
-        self.buffer_size = size;
+    /// Sets the heartbeat timeout.
+    pub fn heartbeat(mut self, interval: Duration) -> Self {
+        self.heartbeat = interval;
         self
     }
 
-    /// Gets the visibility timeout
-    pub fn visibility_timeout(&self) -> Duration {
-        self.visibility_timeout
-    }
-
-    /// Sets the visibility timeout (builder style)
-    pub fn with_visibility_timeout(mut self, timeout: Duration) -> Self {
+    /// Sets the message visibility timeout.
+    pub fn visibility_timeout(mut self, timeout: Duration) -> Self {
         self.visibility_timeout = timeout;
         self
     }
 
-    /// Specify your own codec
-    pub fn with_codec<C>(self) -> Config<C> {
-        Config {
-            poll_strategy: self.poll_strategy,
-            buffer_size: self.buffer_size,
-            queue: self.queue,
-            visibility_timeout: self.visibility_timeout,
-            _codec: PhantomData,
-        }
+    /// Sets the queue storage mode.
+    pub fn mode(mut self, mode: StorageMode) -> Self {
+        self.storage_mode = mode;
+        self
+    }
+
+    /// Enables or disables worker tracking.
+    pub fn track_worker(mut self, track_worker: bool) -> Self {
+        self.track_worker = track_worker;
+        self
+    }
+
+    /// Enables or disables result storage.
+    pub fn store_results(mut self, store_results: bool) -> Self {
+        self.store_results = store_results;
+        self
     }
 }
 
-impl Default for Config<JsonCodec<Vec<u8>>> {
-    fn default() -> Self {
-        let config = BackoffConfig::default().with_jitter(0.9);
-        let interval = IntervalStrategy::new(Duration::from_millis(50)).with_backoff(config);
-        let poll_strategy = StrategyBuilder::new().apply(interval).build();
-        Self {
-            poll_strategy,
-            buffer_size: 100,
-            queue: "default_queue".into(),
-            visibility_timeout: Duration::from_secs(30),
-            _codec: PhantomData,
-        }
-    }
+/// Storage mode used by the queue.
+#[derive(Debug, Clone)]
+pub enum StorageMode {
+    /// Use the default queue layout.
+    Default,
+
+    /// Use an unlogged queue.
+    Unlogged,
+
+    /// Use a partitioned queue.
+    Partitioned {
+        /// How often a new partition is created.
+        partition_interval: String,
+
+        /// How long partitions are retained.
+        retention_interval: String,
+    },
 }

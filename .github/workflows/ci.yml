@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     services:
       postgres:
-        image: ghcr.io/pgmq/pg18-pgmq:v1.7.0
+        image: ghcr.io/pgmq/pg18-pgmq:v1.10.0
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -55,6 +55,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
             ${{ runner.os }}-cargo-
+
+      - name: Enable pgmq extension
+        run: |
+          PGPASSWORD=postgres psql \
+            -h localhost \
+            -p 5432 \
+            -U postgres \
+            -d postgres \
+            -c "CREATE EXTENSION IF NOT EXISTS pgmq;"
 
       - name: Run cargo test with all features
         run: cargo test --all-features --verbose -- --test-threads=1

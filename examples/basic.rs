@@ -10,7 +10,8 @@ async fn main() {
         .unwrap();
 
     PGMQueue::setup(&pool).await.unwrap();
-    let mut backend = PGMQueue::new(pool, "basic").await;
+    let config = Config::default().queue("basic");
+    let mut backend = PGMQueue::new(pool).with_config(config);
 
     backend.push(42usize).await.unwrap();
 

@@ -3,8 +3,6 @@ exclude-unpublished = true
 
 [advisories]
 unmaintained = "none"
-# TODO: @geofmureithi Keep track sqlx dependencies
-ignore = ["RUSTSEC-2026-0104", "RUSTSEC-2026-0098", "RUSTSEC-2026-0099"]  
 
 [licenses]
 confidence-threshold = 0.8
@@ -40,6 +38,10 @@ skip-tree = [
     { name = "rand_chacha" },
     { name = "rand_core" },
     { name = "redox_syscall" },
+    # TODO: @geofmureithi Investigate why these are causing issues possibly due to pgmq dependencies
+    { name = "thiserror" },
+    { name = "thiserror-impl" },
+    { name = "syn" },
 ]
 
 [sources]
