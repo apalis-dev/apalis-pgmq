@@ -27,7 +27,7 @@ tokio-comp-native-tls = ["tokio", "sqlx/runtime-tokio", "sqlx/tls-native-tls"]
 bytes-compat = [] # messages will stored as BYTEA in apalis_pgmq schema 
 
 [dependencies]
-sqlx = { version = "0.8.6", features = ["postgres", "json"] }
+sqlx = { version = "0.9.0", features = ["postgres", "json"] }
 apalis-core = { version = "1.0.0-rc.10", default-features = false, features = [
     "sleep",
 ] }
