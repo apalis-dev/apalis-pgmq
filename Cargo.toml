@@ -31,7 +31,7 @@ sqlx = { version = "0.8.6", features = ["postgres", "json"] }
 apalis-core = { version = "1.0.0-rc.10", default-features = false, features = [
     "sleep",
 ] }
-apalis-codec = { version = "0.1.0-rc.10", default-features = false, features = [
+apalis-codec = { version = "1.0.0", default-features = false, features = [
     "json",
 ] }
 
