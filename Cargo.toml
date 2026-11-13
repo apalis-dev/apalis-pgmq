@@ -7,7 +7,6 @@ repository = "https://github.com/apalis-dev/apalis-pgmq"
 license = "PostgreSQL"
 description = "Background task processing for rust using apalis and pgmq"
 readme = "README.md"
-homepage = "https://github.com/apalis-dev/apalis-pgmq"
 documentation = "https://docs.rs/apalis-pgmq"
 keywords = ["apalis", "postgres", "messages", "queue", "worker"]
 categories = ["asynchronous", "database", "network-programming"]
@@ -28,10 +27,10 @@ bytes-compat = [] # messages will stored as BYTEA in apalis_pgmq schema
 
 [dependencies]
 sqlx = { version = "0.8.6", features = ["postgres", "json"] }
-apalis-core = { version = "1.0.0-rc.10", default-features = false, features = [
+apalis-core = { version = "1.1.1", default-features = false, features = [
     "sleep",
 ] }
-apalis-codec = { version = "0.1.0-rc.10", default-features = false, features = [
+apalis-codec = { version = "1.1.1", default-features = false, features = [
     "json",
 ] }
 
@@ -40,7 +39,7 @@ url = "2.5.8"
 tracing = "0.1.44"
 futures = "0.3.34"
 serde = "1.0.229"
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 pin-project-lite = "0.2.17"
 tokio = { version = "1", features = [
     "rt",
@@ -51,8 +50,8 @@ pgmq = { version = "0.33.7", features = ["install-sql"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
-apalis = { version = "1.0.0-rc.10" }
-apalis-workflow = { version = "0.1.0-rc.10" }
+apalis = { version = "1.1.1" }
+apalis-workflow = { version = "1.1.1" }
 facet = "0.46.5"
 facet-msgpack = "0.46.1"
 
