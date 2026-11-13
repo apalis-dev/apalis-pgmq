@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "apalis-pgmq"
-version = "0.1.0-rc.5"
+version = "0.1.0"
 dependencies = [
  "apalis",
  "apalis-codec",
@@ -721,7 +721,7 @@ dependencies = [
  "facet-core",
  "facet-path",
  "hashbrown 0.17.1",
- "smallvec 2.0.0-beta.4",
+ "smallvec 2.0.0-beta.5",
 ]
 
 [[package]]
@@ -2104,18 +2104,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "2.0.0-beta.4"
+version = "2.0.0-beta.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1a521aaffa9ff9b9f5c7f50a8eb60aebd11d6467d43684128d5552f6ce02003"
-dependencies = [
- "smallvec-macro",
-]
-
-[[package]]
-name = "smallvec-macro"
-version = "0.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aa3a1ebad7c7d912534fac818e45203fe094907e97806786285f8f440222e5a"
+checksum = "c352cc0c12c76bb9ef4462dfc91461598eaa5e31f40ac494f50dbfad4f12c106"
 
 [[package]]
 name = "socket2"
