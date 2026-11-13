@@ -52,9 +52,7 @@ pgmq = { version = "0.33.7", features = ["install-sql"] }
 tokio = { version = "1", features = ["full"] }
 apalis = { version = "1.1.1" }
 apalis-workflow = { version = "1.1.1" }
-facet = "0.46.5"
-facet-msgpack = "0.46.1"
 
-[[example]]
-name = "codec"
-required-features = ["bytes-compat"]
+# [[example]]
+# name = "codec"
+# required-features = ["bytes-compat"]
