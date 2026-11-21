@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- *deps(deps)*: bump sqlx from 0.8.6 to 0.9.1 ([#70](https://github.com/apalis-dev/apalis-pgmq/pull/70))
 ## [0.1.0](https://github.com/apalis-dev/apalis-pgmq/releases/tag/v0.1.0)
 
 - chore: add auto-release and auto-changelog scripts ([#66](https://github.com/apalis-dev/apalis-pgmq/pull/66))
